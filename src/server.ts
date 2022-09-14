@@ -1,0 +1,93 @@
+import express from "express";
+import cors from "cors";
+import { PrismaClient } from "@prisma/client";
+import { convertHourStringToMinutes } from "./utils/convert-hour-string-to-minutes";
+import { convertMinutesToHourString } from "./utils/convert-minutes-to-hour-string";
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+const prisma = new PrismaClient();
+
+app.get("/games", async (request, response) => {
+  const games = await prisma.game.findMany({
+    include: {
+      _count: {
+        select: {
+          ads: true,
+        },
+      },
+    },
+  });
+
+  return response.status(200).json(games);
+});
+
+app.get("/games/:id/ads", async (request, response) => {
+  const gameId = request.params.id;
+  const ads = await prisma.ad.findMany({
+    where: {
+      gameId,
+    },
+    select: {
+      id: true,
+      name: true,
+      weekDays: true,
+      useVoiceChannel: true,
+      yearsPlaying: true,
+      hoursStart: true,
+      hoursEnd: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return response.status(200).json(
+    ads.map((ad) => {
+      return {
+        ...ad,
+        weekDays: ad.weekDays.split(","),
+        hoursStart: convertMinutesToHourString(ad.hoursStart),
+        hoursEnd: convertMinutesToHourString(ad.hoursEnd),
+      };
+    })
+  );
+});
+
+app.get("/ads/:id/discord", async (request, response) => {
+  const id = request.params.id;
+  const ad = await prisma.ad.findUniqueOrThrow({
+    where: {
+      id,
+    },
+    select: {
+      discord: true,
+    },
+  });
+
+  return response.status(200).json(ad);
+});
+
+app.post("/games/:id/ads", async (request, response) => {
+  const gameId = request.params.id;
+  const body: any = request.body;
+
+  const ad = await prisma.ad.create({
+    data: {
+      gameId,
+      name: body.name,
+      yearsPlaying: body.yearsPlaying,
+      discord: body.discord,
+      weekDays: body.weekDays.join(","),
+      hoursStart: convertHourStringToMinutes(body.hoursStart),
+      hoursEnd: convertHourStringToMinutes(body.hoursEnd),
+      useVoiceChannel: body.useVoiceChannel,
+    },
+  });
+
+  return response.status(201).json(ad);
+});
+
+app.listen(3333);
